@@ -3,6 +3,7 @@ import {fileURLToPath} from "url";
 import {dirname, join} from "path"
 import { User, Room, Request } from "./db.js";
 import { error } from 'console';
+import session from 'express-session'
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express ();
@@ -19,6 +20,38 @@ const rooms = Room.findAll();
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(join(__dirname, "public")));
+app.use(session({
+    secret: 'conf2027-secret',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        maxAge: 1000 * 60 * 60 * 2,
+        httpOnly: true,
+        sameSite: 'lax'
+    }
+}));
+
+const INACTIVITY_LIMIT = 20 * 60 * 1000;
+
+app.use((req, res, next) => {
+    res.locals.session = req.session;
+    next();
+});
+
+app.use((req, res, next) => {
+    if (req.session && req.session.userId) {
+        const now = Date.now();
+
+if (req.session.lastActivity && (now - req.session.lastActivity > INACTIVITY_LIMIT)) {
+    return req.session.destroy(() => {
+        res.redirect('/login');
+    });
+}
+
+    req.session.lastActivity = now
+}
+next();
+});
 
 app.set("view engine", "ejs");
 app.set("views", "./views");
@@ -81,6 +114,25 @@ app.post("/request_detail", (req, res) => {
 
 app.listen (PORT, () => {
     console.log (`Сервер: http://localhost:${PORT}`);
+});
+
+app.post('/login', (req, res) => {
+    const user = User.findByLogin(req.body.login);
+
+    if (user && bcrypt.compareSync(req.body.password, user.password)) {
+        req.session.userId = user.id;
+        req.session.fio = user.fio;
+        req.session.login = user.login
+        req.session.lastActivity = Date.now();
+        
+        return res.redirect(user.login === 'Conf2027' ? '/admin' : '/dashboard');
+    }
+
+    res.render('auth', {
+        mode: 'login',
+        error: 'Неверный логин или пароль',
+        flash: null
+    });
 });
 
 app.get("/create", (req, res) => {
