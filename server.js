@@ -1,11 +1,21 @@
 import express from 'express';
 import {fileURLToPath} from "url";
 import {dirname, join} from "path"
-import { User, Room, Request } from './db.js';
+import { User, Room, Request } from "./db.js";
+import { error } from 'console';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express ();
 const PORT = 3000;
+const rooms = Room.findAll();
+// const newRequest = Request.create({
+//     userId: 1,
+//     roomId: 2,
+//     dateStart: "2027-04-10",
+//     payment: "При очном посещении",
+// });
+// console.log("Созданная заявка:");
+// console.log(newRequest);
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(join(__dirname, "public")));
@@ -73,3 +83,6 @@ app.listen (PORT, () => {
     console.log (`Сервер: http://localhost:${PORT}`);
 });
 
+app.get("/create", (req, res) => {
+ res.render("create_request", { rooms, error: [] });
+});

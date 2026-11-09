@@ -153,6 +153,13 @@ db.exec(`
       findAllDetailed() {
         return db.prepare(`SELECT * FROM ${this.table}`).all(); 
       }
+      create ({ userId, roomId, dateStart, payment }) {
+        const r = db.prepare(`
+          INSERT INTO ${this.table} (user_id, room_id, date_start, payment)
+          VALUES (?, ?, ?, ?)
+          `).run(userId, roomId, dateStart, payment);
+          return this.findById(r.lastInsertRowid);
+      }
     }
 
     export const User = new UserClass ();
