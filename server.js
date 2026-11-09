@@ -2,13 +2,10 @@ import express from 'express';
 import {fileURLToPath} from "url";
 import {dirname, join} from "path"
 import { User, Room, Request } from "./db.js";
-import { error } from 'console';
 import session from 'express-session'
-import { type } from 'os';
-import { text } from 'stream/consumers';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const app = express ();
+const app = express();
 const PORT = 3000;
 const rooms = Room.findAll();
 const INACTIVITY_LIMIT = 20 * 60 * 1000;
@@ -134,6 +131,38 @@ app.post("/request_detail", (req, res) => {
 
 app.listen (PORT, () => {
     console.log (`Сервер: http://localhost:${PORT}`);
+});
+
+app.get("/", (req, res) => {
+    res.redirect("/rooms");
+});
+app.get("/rooms", (req, res) => {
+ const rooms = Room.findAll();   
+ res.render("rooms", { rooms });
+});
+app.get("/rooms/type/:type", (req, res) => {
+    const rooms = Room.findByType(req.params.type);
+    res.render("rooms", { rooms });
+});
+
+app.get('/dashboard', requireAuth, (req, res) => {
+    const requests = Request.findByUser(req.session.userId);
+    res.render('request_list', {isAdmin: false, requests });
+});
+
+app.get('/admin', requireAdmin, (req, res) => {
+    const requests = Request.findAllDetailed();
+    res.render('request_list', {isAdmin: true, requests });
+});
+
+app.post('/admin', requireAdmin, (req, res) => {
+    Request.updateStatus(req.params.id, req.body.status);
+    res.redirect('/admin');
+});
+
+app.post('/review/:id', requireAuth, (req, res) => {
+    Request.addReview(req.body.id, req.session.userId, req.body.review);
+    res.redirect('/dashboard');
 });
 
 app.post('/login', (req, res) => {
