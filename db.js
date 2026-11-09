@@ -1,10 +1,11 @@
 import Database from "better-sqlite3";
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path'
-import { console } from "inspector";
+import bcrypt from "bcryptjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const db = new Database(join(__dirname, 'conf.db'));
+const hash = (pwd) => bcrypt.hashSync(pwd, 10);
 
 db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -28,6 +29,7 @@ db.exec(`
         stmt.run('ivan', 'demo', 'Иванов Иван', '8(999)123-45-67', 'ivan@example.com');
         stmt.run('petr', 'demo', 'Петров Пётр', '8(999)123-45-68', 'petr@example.com');
         stmt.run('anna', 'demo', 'Анна Сидорова', '8(999)123-45-69', 'anna@example.com');
+        stmt.run("Conf2027", hash("Demo77"), "Администратор", "8(999)000-00-00", "admin@conf.ru");
         console.log('Тестовые пользователи добавлены');
     }
     
@@ -81,6 +83,9 @@ db.exec(`
         console.log('Тестовые заявки добавлены');
     }
 
+
+    
+
     class UserClass  {
       constructor() {
         this.table = "users";
@@ -102,68 +107,117 @@ db.exec(`
         return row ? row.total : 0;
       }
 
+      create({ login, password, fio, phone, email }) {
+        const hashed = bcrypt.hashSync(password, 10);
+        const r = db
+        .prepare(
+          `
+          INSERT INTO ${this.table} (login, password, fio, phone, email)
+          VALUES (?, ?, ?, ?, ?)
+          `,
+        )
+        .run(login, hashed, fio, phone, email);
+        return this.findById(r.lastInsertRowid);
+      }
+
       exists(login) {
         const row = db.prepare(`SELECT id FROM ${this.table} WHERE login = ?`).get(login);
         return !!row;
       }
     }
 
-    class RoomClass {
-      constructor() {
-        this.table = "rooms";
-      }
-      findAll() {
-        return db.prepare(`SELECT * FROM ${this.table}`).all();
-      }
-      findById(id) {
-        return db.prepare(`SELECT * FROM ${this.table} WHERE id = ?`).get(id);
-      }
-      findByType(type) {
-        return db.prepare(`SELECT * FROM ${this.table} WHERE type = ? COLLATE NOCASE`).all(type);
-      }
-      count() {
-        const result = db.prepare(`SELECT COUNT(*) AS total FROM ${this.table}`).get();
-        return result ? result.total : 0;
-      }
-    }
 
-    class RequestClass {
-      constructor() {
-        this.table = "Requests";
-      }
 
-      findById(id) {
-        return db.prepare(`SELECT * FROM ${this.table} WHERE id = ?`).get(id);
-      }
-      findByUser(userId) {
-        return db.prepare(`SELECT * FROM ${this.table} WHERE user_id = ?`).all(userId);
-      }
 
-      rooms(type) {
-        return db.prepare(`SELECT * FROM ${this.table} WHERE type = ? COLLATE NOCASE`).all(type);
-      }
-      count() {
-        const result = db.prepare(`SELECT COUNT(*) AS total FROM ${this.table}`).get();
-        return result ? result.total : 0;
-      }
-      updateStatus(id, status) {
-        const result = db.prepare(`UPDATE ${this.table} SET status = ? WHERE id = ?`).run(status, id);
-        return result.changes > 0;
-      }
-      findAllDetailed() {
-        return db.prepare(`SELECT * FROM ${this.table}`).all(); 
-      }
-      create ({ userId, roomId, dateStart, payment }) {
-        const r = db.prepare(`
-          INSERT INTO ${this.table} (user_id, room_id, date_start, payment)
-          VALUES (?, ?, ?, ?)
-          `).run(userId, roomId, dateStart, payment);
-          return this.findById(r.lastInsertRowid);
-      }
-    }
+class RoomClass {
+  constructor() {
+    this.table = "rooms";
+  }
+  findAll() {
+    return db.prepare(`SELECT * FROM ${this.table}`).all();
+  }
+  findById(id) {
+    return db.prepare(`SELECT * FROM ${this.table} WHERE id = ?`).get(id);
+  }
+  findByType(type) {
+    return db.prepare(`SELECT * FROM ${this.table} WHERE type = ? COLLATE NOCASE`).all(type);
+  }
+  count() {
+    const result = db.prepare(`SELECT COUNT(*) AS total FROM ${this.table}`).get();
+    return result ? result.total : 0;
+  }
+}
 
-    export const User = new UserClass ();
+
+class RequestClass {
+  constructor() {
+    this.table = "Requests";
+    this.select = `SELECT r.*, rm.name AS room_name, rm.type AS room_type,
+    u.fio, u.login
+    FROM requests r
+    JOIN rooms rm ON rm.id = r.room_id
+    JOIN users u ON u.id = r.user_id`
+  }
+
+  findById(id) {
+    return db.prepare(`SELECT * FROM ${this.table} WHERE id = ?`).get(id);
+  }
+  findByUser(userId) {
+    return db.prepare(`${this.select} WHERE r.user_id = ? ORDER BY r.id DESC`).all(userId);
+  }
+
+  rooms(type) {
+    return db.prepare(`SELECT * FROM ${this.table} WHERE type = ? COLLATE NOCASE`).all(type);
+  }
+  count() {
+    const result = db.prepare(`SELECT COUNT(*) AS total FROM ${this.table}`).get();
+    return result ? result.total : 0;
+  }
+  updateStatus(id, status) {
+    const result = db.prepare(`UPDATE ${this.table} SET status = ? WHERE id = ?`).run(status, id);
+    return result.changes > 0;
+  }
+  findDetailed(id) {
+    return db.prepare(`
+      SELECT r.*,
+            u.fio AS user_fio,
+            u.login AS user_login,
+            u.email AS user_email,
+            u.phone AS user_phone,
+            rm.name AS room_name,
+            rm.type AS room_type,
+            rm.capacity AS room_capacity
+      FROM ${this.table} r
+      JOIN users u ON u.id = r.user_id
+      JOIN rooms rm ON rm.id = r.room_id
+      WHERE r.id = ?
+    `).get(id);
+  }
+  addReview(id, userId, review) {
+    if (!review || !review.trim()) return false;
+    const r = db.prepare(`
+      UPDATE ${this.table}
+      SET review = ?
+      WHERE id = ? AND user_id = ? AND status = 'Завершено'
+    `).run(review.trim(), id, userId);
+    return r.changes > 0;
+  }
+  findAllDetailed() {
+    return db.prepare(`${this.select} ORDER BY  r.id DESC`).all(); 
+  }
+  create({ userId, roomId, dateStart, payment}) {
+    const r = db.prepare (`
+      INSERT INTO ${this.table} (user_id, room_id, date_start, payment)
+      VALUES (?, ?, ?, ?)
+      `).run(userId, roomId, dateStart, payment);
+      return this.findById(r.lastInsertRowid);
+  }
+}
+
+
+
+
     export const Room = new RoomClass();
     export const Request = new RequestClass();
-
+    export const User = new UserClass ();
     export default db;

@@ -3,6 +3,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import db, { User, Room, Request } from './db.js';
 import session from 'express-session';
+import bcrypt from "bcryptjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -61,20 +62,25 @@ app.get('/register', (req, res) => {
   res.render('auth', { mode: 'register', form: {}, errors: [] });
 });
 
-app.post('/register', (req, res) => {
-  const errors = validate(req.body);
-  if (User.exists(req.body.login)) errors.push('Этот логин уже занят');
+app.post("/register", (req, res) => {
+    const errors = validate(req.body);
 
-  if (errors.length) {
-    return res.render('auth', { mode: 'register', form: req.body, errors });
-  }
-
-  const { login, password, fio, phone, email } = req.body;
-  db.prepare(`INSERT INTO users (login, password, fio, phone, email) VALUES (?, ?, ?, ?, ?)`)
-    .run(login.trim(), password, fio.trim(), phone.trim(), email.trim());
-
-  req.session.flash = { type: 'success', text: 'Регистрация успешна. Войдите' };
-  res.redirect('/login');
+    if (User.exists(req.body.login)) {
+      errors.push("Логин уже занят");
+    }
+    if (errors.length) {
+      return res.render("auth", {
+        mode: "register",
+        form: req.body,
+        errors,
+      });
+    }
+  User.create(req.body);
+  req.session.flash = {
+    type: "success",
+    text: "Регистрация успешна. Войдите.",
+  };
+  res.redirect("/login");
 });
 
 app.get('/login', (req, res) => {
@@ -143,9 +149,26 @@ app.post('/create', requireAuth, (req, res) => {
   res.redirect('/dashboard')
 })
 
-// app.post("/create", requireAuth, (req, res) => {
-//   res.render("create_request", { rooms: Room.findAll(), errors: [] });
-// });
+app.get("/request/:id", requireAuth, (req, res) => {
+  const request = Request.findDetailed(req.params.id);
+
+  if (!request) {
+    return res.status(404).send("Заявка не найдена");
+  }
+
+  const isOwner = request.user_id === req.session.userId;
+  const isAdmin = req.session.login === "Conf2027";
+
+  if (!isOwner && !isAdmin) {
+    return res.status(403).send("Доступ запрещён");
+  }
+
+  res.render("request_detail", {
+    request,
+    isOwner,
+    isAdmin,
+  });
+});
 
 app.listen(PORT, () => {
   console.log(`Сервер: http://localhost:${PORT}`);
